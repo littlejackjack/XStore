@@ -286,6 +286,32 @@ Cakupan test yang terbukti lulus:
 
 ---
 
+## 8. Mode preview (tanpa Docker)
+
+Untuk mendemo storefront + admin panel tanpa PostgreSQL/Redis nyata:
+
+```bash
+# 1. API dengan database in-memory (pg-mem) + data demo
+cd apps/api && node preview-server.js          # :4000
+
+# 2. Frontend, proxy /api ke API lokal
+cd apps/web
+API_PROXY_TARGET=http://127.0.0.1:4000 npm run build
+mkdir -p .next/standalone/.next
+cp -r .next/static .next/standalone/.next/static
+PORT=3000 HOSTNAME=0.0.0.0 node .next/standalone/server.js
+```
+
+Akun demo: `admin@xstore.id` / `buyer@xstore.id` — password `Demo1234!`.
+Server `Frankfurt 01` sengaja berstatus `MAINTENANCE` untuk mendemonstrasikan
+penyaringan server saat checkout.
+
+> Catatan: rewrite `/api/*` hanya aktif bila env `API_PROXY_TARGET` di-set.
+> Di produksi (Docker/Caddy) variabel ini tidak ada, sehingga request langsung
+> menuju `NEXT_PUBLIC_API_URL`.
+
+---
+
 ## 8. Operasional
 
 ```bash

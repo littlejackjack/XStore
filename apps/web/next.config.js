@@ -4,6 +4,21 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   images: { unoptimized: true },
+  // ---------------------------------------------------------------------------
+  // Preview / local development without Caddy:
+  // when API_PROXY_TARGET is set, /api/* is proxied to a locally running API
+  // (e.g. `node preview-server.js` in apps/api). In production (Docker/Caddy)
+  // this variable is NOT set, so requests go straight to the public API URL.
+  // ---------------------------------------------------------------------------
+  async rewrites() {
+    if (!process.env.API_PROXY_TARGET) return [];
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${process.env.API_PROXY_TARGET.replace(/\/+$/, '')}/api/:path*`,
+      },
+    ];
+  },
   async headers() {
     const csp = [
       "default-src 'self'",

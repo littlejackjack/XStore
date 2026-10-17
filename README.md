@@ -138,13 +138,24 @@ Setiap push ke branch `main`/`arena/*` (dan tag `v*`) memicu workflow
 Image hasil build (repo publik → bisa langsung di-pull):
 
 ```bash
-# API (dipakai service app & worker)
-docker pull ghcr.io/littlejackjack/xstore-api:arena-502c634c-xstore
-docker pull ghcr.io/littlejackjack/xstore-api:sha-<commit-sha>
+# Rilis terbaru (tag v1.0.0, lihat GitHub Releases)
+docker pull ghcr.io/littlejackjack/xstore-api:v1.0.0
+docker pull ghcr.io/littlejackjack/xstore-web:v1.0.0
 
-# Frontend
-docker pull ghcr.io/littlejackjack/xstore-web:arena-502c634c-xstore
-docker pull ghcr.io/littlejackjack/xstore-web:sha-<commit-sha>
+# Branch
+docker pull ghcr.io/littlejackjack/xstore-api:main
+docker pull ghcr.io/littlejackjack/xstore-web:main
+
+# Per-commit (immutable)
+docker pull ghcr.io/littlejackjack/xstore-api:sha-17eea4d2a
+docker pull ghcr.io/littlejackjack/xstore-web:sha-17eea4d2a
+```
+
+Membuat rilis baru (otomatis memicu build & push image dengan tag yang sama):
+
+```bash
+git tag -a v1.0.1 -m "v1.0.1" && git push origin v1.0.1
+gh release create v1.0.1 --generate-notes
 ```
 
 Menjalankan image tanpa build dari source:

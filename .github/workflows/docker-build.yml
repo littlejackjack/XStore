@@ -62,7 +62,8 @@ jobs:
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long
       ENCRYPTION_KEY: ci-encryption-key-at-least-32-characters
       NODE_ENV: development
-      DB_SYNC: 'true'
+      # Production path: schema comes from SQL migrations, never auto-sync.
+      DB_SYNC: 'false'
       SEED_SUPER_ADMIN: 'true'
       SUPER_ADMIN_EMAIL: admin@xstore.id
       SUPER_ADMIN_PASSWORD: ChangeMe123!
@@ -88,6 +89,10 @@ jobs:
         working-directory: apps/api
         run: npm test
 
+      - name: Run SQL migrations (real PostgreSQL)
+        working-directory: apps/api
+        run: npm run migration:run
+
       - name: Seed database (real PostgreSQL)
         working-directory: apps/api
         run: npm run seed
@@ -100,7 +105,7 @@ jobs:
           API_PID=$!
           echo "API pid: $API_PID"
 
-          for i in $(seq 1 30); do
+          for i in $(seq 1 40); do
             if curl -sf http://127.0.0.1:4000/api/health > /tmp/health.json; then
               break
             fi

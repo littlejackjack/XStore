@@ -1,0 +1,133 @@
+# =============================================================================
+# XStore - production stack
+#
+#   docker compose up -d --build
+#
+# Services:
+#   db      PostgreSQL 16            (persistent volume)
+#   redis   Redis 7 (cache + queues) (persistent volume)
+#   app     NestJS API               (migrations + seed + HTTP on :4000)
+#   worker  BullMQ background jobs   (provisioning + server monitoring)
+#   web     Next.js frontend         (standalone, port 3000)
+#   caddy   reverse proxy + HTTPS    (80/443, automatic Let's Encrypt)
+# =============================================================================
+name: xstore
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: xstore-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-xstore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-xstore}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [xstore]
+
+  redis:
+    image: redis:7-alpine
+    container_name: xstore-redis
+    restart: unless-stopped
+    command: ["sh", "-c", "redis-server --requirepass $${REDIS_PASSWORD} --appendonly yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [xstore]
+
+  app:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    # Uncomment to run the image built by GitHub Actions instead of building locally:
+    # image: ghcr.io/littlejackjack/xstore-api:arena-502c634c-xstore
+    container_name: xstore-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "4000"
+    networks: [xstore]
+
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    # Uncomment to run the image built by GitHub Actions instead of building locally:
+    # image: ghcr.io/littlejackjack/xstore-api:arena-502c634c-xstore
+    container_name: xstore-worker
+    restart: unless-stopped
+    command: ["sh", "scripts/worker-entrypoint.sh"]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [xstore]
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    # Uncomment to run the image built by GitHub Actions instead of building locally:
+    # image: ghcr.io/littlejackjack/xstore-web:arena-502c634c-xstore
+    container_name: xstore-web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - app
+    expose:
+      - "3000"
+    networks: [xstore]
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: xstore-caddy
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - app
+    networks: [xstore]
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  xstore:
+    driver: bridge

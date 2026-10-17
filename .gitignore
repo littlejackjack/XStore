@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# builds
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# logs
+npm-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# coverage & caches
+coverage/
+.nyc_output/
+.cache/
+.temp/
+.eslintcache
+
+# docker volumes (local)
+.docker-data/
+
+# os
+.DS_Store
+Thumbs.db
+
+# editors
+.idea/
+.vscode/*
+!.vscode/extensions.json

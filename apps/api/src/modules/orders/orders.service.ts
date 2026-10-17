@@ -16,6 +16,7 @@ import { SettingsService } from '../settings/settings.service';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { randomOrderSuffix } from '../../common/utils/random.util';
+import { RedisService } from '../../redis/redis.service';
 
 @Injectable()
 export class OrdersService {
@@ -36,6 +37,7 @@ export class OrdersService {
     private readonly dataSource: DataSource,
     private readonly mail: MailService,
     private readonly settings: SettingsService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -127,16 +129,34 @@ export class OrdersService {
       // used when the gateway callback is delayed or lost).
       await this.notifyPayment(order, order.bayarInvoiceId, result.finalAmount);
 
-      await this.provisioningQueue.add(
-        'provision-subscription',
-        { orderId: order.id },
-        { attempts: 5, backoff: { type: 'exponential', delay: 5000 } },
-      );
+      await this.queueProvisioning(order.id, order.orderNumber, order.userId);
     } else if (['expired', 'cancelled', 'failed'].includes(result.status)) {
       order.status = result.status === 'expired' ? 'EXPIRED' : 'CANCELLED';
       await this.orderRepository.save(order);
     }
     return this.toView(order, order.product, order.server);
+  }
+
+  /**
+   * Queues the provisioning job, refusing early when Redis is unreachable so a
+   * request never hangs on a dead queue connection.
+   */
+  private async queueProvisioning(orderId: string, orderNumber: string, userId: string): Promise<boolean> {
+    if (!(await this.redis.ping())) {
+      this.logger.error(`Provisioning queue unavailable (Redis) for order ${orderNumber}`);
+      return false;
+    }
+    try {
+      await this.provisioningQueue.add(
+        'provision-subscription',
+        { orderId },
+        { attempts: 5, backoff: { type: 'exponential', delay: 5000 } },
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to queue provisioning for ${orderNumber}: ${(error as Error).message}`);
+      return false;
+    }
   }
 
   /** Payment-received + invoice emails (shared by the webhook and sync paths). */
@@ -167,6 +187,37 @@ export class OrdersService {
     } catch (error) {
       this.logger.error(`Failed to send payment emails for ${full.orderNumber}: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Re-queues provisioning for a paid order (admin action).
+   * Used when the queue was unavailable at webhook time, or when Marzban was
+   * temporarily down and the worker exhausted its retries.
+   */
+  async retryProvisioning(actor: User, id: string) {
+    const order = await this.findOne(actor, id);
+    if (!['PAID', 'PROVISIONING', 'FAILED'].includes(order.status)) {
+      throw new BadRequestException(`Order ${order.orderNumber} cannot be provisioned (status ${order.status})`);
+    }
+
+    if (order.status === 'FAILED') {
+      await this.orderRepository.update({ id: order.id }, { status: 'PAID', failureReason: null });
+    }
+
+    const queued = await this.queueProvisioning(order.id, order.orderNumber, order.userId);
+    if (!queued) {
+      throw new BadRequestException('Provisioning queue is unavailable - check Redis and try again');
+    }
+
+    await this.audit.record({
+      action: 'PROVISIONING_RETRIED',
+      entity: 'Order',
+      entityId: order.id,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      metadata: { orderNumber: order.orderNumber },
+    });
+    return { queued: true };
   }
 
   /** Re-sends the invoice email for a paid order (admin action). */

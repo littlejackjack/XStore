@@ -21,6 +21,8 @@ export default function AdminSubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [reminding, setReminding] = useState(false);
 
   useEffect(() => {
     api<Subscription[]>('/admin/subscriptions')
@@ -29,12 +31,39 @@ export default function AdminSubscriptionsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  /** Runs the same scan as the daily job - useful to test the Resend setup. */
+  const runReminders = async () => {
+    setReminding(true);
+    setMessage('');
+    setError('');
+    try {
+      const result = await api<{ reminded: number; windowDays: number }>(
+        '/admin/subscriptions/run-expiry-reminders',
+        { method: 'POST' },
+      );
+      setMessage(
+        `${result.reminded} reminder email(s) sent (window: ${result.windowDays} day(s) before expiry).`,
+      );
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setReminding(false);
+    }
+  };
+
   if (loading) return <Spinner />;
   if (error) return <Alert>{error}</Alert>;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Subscriptions</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold tracking-tight">Subscriptions</h1>
+        <button type="button" className="btn-ghost text-sm" disabled={reminding} onClick={runReminders}>
+          {reminding ? 'Sending...' : 'Send expiry reminders now'}
+        </button>
+      </div>
+      {error && <Alert>{error}</Alert>}
+      {message && <Alert type="success">{message}</Alert>}
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="border-b border-zinc-200 text-left text-zinc-500 dark:border-zinc-800">

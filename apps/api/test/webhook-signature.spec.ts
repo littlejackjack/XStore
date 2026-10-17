@@ -33,6 +33,8 @@ function buildService(order: any) {
     sendInvoice: jest.fn().mockResolvedValue({ ok: true }),
   };
   const settings = { get: jest.fn().mockResolvedValue('XStore') };
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const redis = { ping: jest.fn().mockResolvedValue(true) };
 
   const service = new WebhooksService(
     orderRepository as any,
@@ -42,8 +44,10 @@ function buildService(order: any) {
     queue as any,
     mail as any,
     settings as any,
+    audit as any,
+    redis as any,
   );
-  return { service, orderRepository, paymentRepository, queue, mail };
+  return { service, orderRepository, paymentRepository, queue, mail, audit, redis };
 }
 
 function sign(invoiceId: string, status: string, finalAmount: string, timestamp: string) {
@@ -81,7 +85,7 @@ describe('WebhooksService (Bayar.gg callback)', () => {
       ip: '95.169.180.225',
     });
 
-    expect(result).toEqual({ received: true, processed: true });
+    expect(result).toEqual({ received: true, processed: true, queued: true });
     expect(orderRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'PAID' }),
     );

@@ -72,10 +72,36 @@ export class ProductsService {
     return saved;
   }
 
-  async remove(id: string, actor: { id: string; email: string }, ip?: string): Promise<void> {
+  /**
+   * Deletes a product. Orders reference products forever, so a product that has
+   * already been sold cannot be hard-deleted: it is deactivated instead (keeps
+   * history + invoices intact) and the caller is told what happened.
+   */
+  async remove(
+    id: string,
+    actor: { id: string; email: string },
+    ip?: string,
+  ): Promise<{ deleted: boolean; deactivated?: boolean }> {
     const product = await this.productRepository.findOneBy({ id });
     if (!product) throw new NotFoundException('Product not found');
-    await this.productRepository.remove(product);
+
+    try {
+      await this.productRepository.remove(product);
+    } catch (error) {
+      if ((error as { code?: string }).code !== '23503') throw error; // not an FK violation
+      await this.productRepository.update({ id }, { isActive: false });
+      await this.audit.record({
+        action: 'PRODUCT_DEACTIVATED',
+        entity: 'Product',
+        entityId: id,
+        actorId: actor.id,
+        actorEmail: actor.email,
+        metadata: { name: product.name, reason: 'referenced by existing orders' },
+        ip,
+      });
+      return { deleted: false, deactivated: true };
+    }
+
     await this.audit.record({
       action: 'PRODUCT_DELETED',
       entity: 'Product',
@@ -85,5 +111,6 @@ export class ProductsService {
       metadata: { name: product.name },
       ip,
     });
+    return { deleted: true };
   }
 }

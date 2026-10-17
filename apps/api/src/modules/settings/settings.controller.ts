@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Put } from '@nestjs/common';
+import { Type } from 'class-transformer';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, Max, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -35,6 +36,14 @@ class UpdateSettingsDto {
   @IsOptional()
   @IsBoolean()
   'order.autoProvision'?: boolean;
+
+  /** Days before expiry that the reminder email is sent (Admin Panel). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  'notifications.expiryReminderDays'?: number;
 }
 
 @ApiTags('settings')

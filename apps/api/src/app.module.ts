@@ -52,6 +52,14 @@ import { RedisService } from './redis/redis.service';
       useFactory: () => ({
         connection: {
           url: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
+          // Fail fast instead of buffering commands forever when Redis is not
+          // reachable (dev/preview environments): `queue.add()` rejects within
+          // a second, and the caller decides how to degrade. Reconnects are
+          // still attempted in the background, so a Redis restart recovers.
+          enableOfflineQueue: false,
+          maxRetriesPerRequest: null, // required by BullMQ
+          connectTimeout: 3_000,
+          retryStrategy: (times: number) => Math.min(times * 250, 2_000),
         },
       }),
     }),

@@ -1,10 +1,11 @@
 /**
- * Unit tests for the daily subscription-expiry reminder job.
+ * Unit tests for the subscription expiry reminder logic.
  *
  * Verifies the two properties that matter in production: only ACTIVE
  * subscriptions inside the reminder window are emailed, and each one is
  * reminded at most once (the `expiry_reminder_sent_at` marker).
  */
+import { ExpiryReminderService } from '../src/modules/provisioning/expiry-reminder.service';
 import { SubscriptionExpiryProcessor } from '../src/modules/provisioning/subscription-expiry.processor';
 
 const NOW = new Date('2026-10-17T07:00:00.000Z');
@@ -13,10 +14,10 @@ function daysFromNow(days: number): Date {
   return new Date(NOW.getTime() + days * 24 * 60 * 60_000);
 }
 
-function build(subscriptions: any[]) {
+function build(subscriptions: any[], reminderDays = 3) {
   const stored = [...subscriptions];
   const subscriptionRepository = {
-    // Mirrors the real query: ACTIVE, not yet expired, newest expiry first.
+    // Mirrors the real query: ACTIVE, not yet expired, soonest expiry first.
     find: jest.fn(async () =>
       stored
         .filter((item) => item.status === 'ACTIVE' && item.expireAt && item.expireAt.getTime() >= Date.now())
@@ -29,16 +30,18 @@ function build(subscriptions: any[]) {
     }),
   };
   const mail = { sendSubscriptionExpiring: jest.fn(async () => ({ ok: true })) };
-  const settings = { get: jest.fn(async () => 3) };
-  const config = { get: jest.fn(() => 'https://xstore.example.com') };
+  const settings = { get: jest.fn(async () => reminderDays) };
+  const config = {
+    get: jest.fn((key: string) => (key === 'app.otp.expiryReminderDays' ? 3 : 'https://xstore.example.com')),
+  };
 
-  const processor = new SubscriptionExpiryProcessor(
+  const service = new ExpiryReminderService(
     subscriptionRepository as any,
     mail as any,
     settings as any,
     config as any,
   );
-  return { processor, subscriptionRepository, mail, stored };
+  return { service, subscriptionRepository, mail, stored };
 }
 
 const ACTIVE = (id: string, daysLeft: number, extra: Record<string, unknown> = {}) => ({
@@ -51,7 +54,7 @@ const ACTIVE = (id: string, daysLeft: number, extra: Record<string, unknown> = {
   ...extra,
 });
 
-describe('SubscriptionExpiryProcessor', () => {
+describe('ExpiryReminderService', () => {
   beforeAll(() => {
     jest.useFakeTimers().setSystemTime(NOW);
   });
@@ -61,7 +64,7 @@ describe('SubscriptionExpiryProcessor', () => {
   });
 
   it('emails subscriptions expiring inside the reminder window', async () => {
-    const { processor, mail, stored } = build([
+    const { service, mail, stored } = build([
       ACTIVE('soon', 2),
       ACTIVE('today', 0),
       ACTIVE('later', 10), // outside the 3-day window
@@ -69,9 +72,9 @@ describe('SubscriptionExpiryProcessor', () => {
       { ...ACTIVE('expired', -2), status: 'EXPIRED' },
     ]);
 
-    const result = await processor.process({ name: 'subscription-expiry-reminders' } as any);
+    const result = await service.sendDueReminders();
 
-    expect(result.reminded).toBe(2);
+    expect(result).toEqual({ reminded: 2, windowDays: 3 });
     expect(mail.sendSubscriptionExpiring).toHaveBeenCalledTimes(2);
     const recipients = mail.sendSubscriptionExpiring.mock.calls
       .map((call: any[]) => call[0].email)
@@ -82,30 +85,45 @@ describe('SubscriptionExpiryProcessor', () => {
   });
 
   it('skips everything when nothing is due', async () => {
-    const { processor, mail } = build([ACTIVE('later', 30)]);
-    const result = await processor.process({ name: 'subscription-expiry-reminders' } as any);
-
-    expect(result.reminded).toBe(0);
+    const { service, mail } = build([ACTIVE('later', 30)]);
+    expect(await service.sendDueReminders()).toEqual({ reminded: 0, windowDays: 3 });
     expect(mail.sendSubscriptionExpiring).not.toHaveBeenCalled();
   });
 
-  it('ignores unrelated jobs', async () => {
-    const { processor, mail } = build([ACTIVE('soon', 1)]);
-    const result = await processor.process({ name: 'some-other-job' } as any);
+  it('honours the window configured in the admin panel', async () => {
+    const { service, mail } = build([ACTIVE('week', 7)], 10);
+    const result = await service.sendDueReminders();
 
-    expect(result).toEqual({ reminded: 0 });
-    expect(mail.sendSubscriptionExpiring).not.toHaveBeenCalled();
+    expect(result.windowDays).toBe(10);
+    expect(result.reminded).toBe(1);
+    expect(mail.sendSubscriptionExpiring).toHaveBeenCalledTimes(1);
   });
 
   it('keeps going when one email fails', async () => {
-    const { processor, mail } = build([ACTIVE('first', 1), ACTIVE('second', 2)]);
+    const { service, mail } = build([ACTIVE('first', 1), ACTIVE('second', 2)]);
     mail.sendSubscriptionExpiring = jest
       .fn()
       .mockRejectedValueOnce(new Error('resend down'))
       .mockResolvedValue({ ok: true });
 
-    const result = await processor.process({ name: 'subscription-expiry-reminders' } as any);
+    const result = await service.sendDueReminders();
     expect(result.reminded).toBe(1);
+  });
+
+  it('falls back to the env default when the setting is unset', async () => {
+    const { service } = build([], 0);
+    expect((await service.sendDueReminders()).windowDays).toBe(3);
+  });
+});
+
+describe('SubscriptionExpiryProcessor', () => {
+  it('delegates to the shared service and ignores other jobs', async () => {
+    const reminders = { sendDueReminders: jest.fn().mockResolvedValue({ reminded: 4, windowDays: 3 }) };
+    const processor = new SubscriptionExpiryProcessor(reminders as any);
+
+    expect(await processor.process({ name: 'subscription-expiry-reminders' } as any)).toEqual({ reminded: 4 });
+    expect(await processor.process({ name: 'some-other-job' } as any)).toEqual({ reminded: 0 });
+    expect(reminders.sendDueReminders).toHaveBeenCalledTimes(1);
   });
 
   it('schedules the job once a day (fixed jobId)', async () => {

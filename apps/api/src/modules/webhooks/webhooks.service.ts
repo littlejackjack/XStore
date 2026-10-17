@@ -10,6 +10,8 @@ import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { MailService } from '../mail/mail.service';
 import { SettingsService } from '../settings/settings.service';
+import { AuditService } from '../audit/audit.service';
+import { RedisService } from '../../redis/redis.service';
 
 /** Reject callbacks whose timestamp is older than this (replay protection). */
 const MAX_TIMESTAMP_SKEW_SECONDS = 300;
@@ -36,6 +38,8 @@ export class WebhooksService {
     private readonly provisioningQueue: Queue,
     private readonly mail: MailService,
     private readonly settings: SettingsService,
+    private readonly audit: AuditService,
+    private readonly redis: RedisService,
   ) {}
 
   async handleBayarGgCallback(input: BayarGgCallbackInput) {
@@ -131,19 +135,13 @@ export class WebhooksService {
     await this.notifyPayment(order, invoiceId, Number(payload.paid_amount ?? finalAmount));
 
     // ---- 6. hand over to the background worker ----------------------------
-    await this.provisioningQueue.add(
-      'provision-subscription',
-      { orderId: order.id },
-      {
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: 100,
-        removeOnFail: 500,
-      },
-    );
+    // The gateway retries up to 6 times, so a queue outage must never turn a
+    // confirmed payment into a 5xx. The order stays PAID and provisioning can
+    // be re-queued from the admin panel (POST /admin/orders/:id/retry-provisioning).
+    const queued = await this.queueProvisioning(order);
 
-    this.logger.log(`Payment confirmed for order ${order.orderNumber} - provisioning queued`);
-    return { received: true, processed: true };
+    this.logger.log(`Payment confirmed for order ${order.orderNumber} - provisioning queued: ${queued}`);
+    return { received: true, processed: true, queued };
   }
 
   /**
@@ -173,6 +171,58 @@ export class WebhooksService {
       });
     } catch (error) {
       this.logger.error(`Failed to send payment emails for ${order.orderNumber}: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Hands the order to the provisioning worker.
+   *
+   * Returns false (instead of throwing) when Redis/the queue is unreachable:
+   * the payment itself is already confirmed, and Bayar.gg retries callbacks up
+   * to 6 times, so answering 5xx would only mark a good payment as failed.
+   * The order stays PAID and an admin can re-queue it from the panel.
+   */
+  private async queueProvisioning(order: Order): Promise<boolean> {
+    if (!(await this.redis.ping())) {
+      this.logger.error(
+        `Payment confirmed for ${order.orderNumber} but Redis is unreachable - provisioning NOT queued`,
+      );
+      await this.audit.record({
+        action: 'PROVISIONING_QUEUE_UNAVAILABLE',
+        entity: 'Order',
+        entityId: order.id,
+        actorId: order.userId,
+        actorEmail: order.user?.email,
+        metadata: { orderNumber: order.orderNumber, reason: 'redis unreachable' },
+      });
+      return false;
+    }
+
+    try {
+      await this.provisioningQueue.add(
+        'provision-subscription',
+        { orderId: order.id },
+        {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 5000 },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+        },
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Payment confirmed for ${order.orderNumber} but provisioning could not be queued: ${(error as Error).message}`,
+      );
+      await this.audit.record({
+        action: 'PROVISIONING_QUEUE_FAILED',
+        entity: 'Order',
+        entityId: order.id,
+        actorId: order.userId,
+        actorEmail: order.user?.email,
+        metadata: { orderNumber: order.orderNumber, reason: (error as Error).message.slice(0, 300) },
+      });
+      return false;
     }
   }
 }

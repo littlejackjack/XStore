@@ -68,7 +68,30 @@ curl https://shop.example.com/api/health
 3. **Admin → Marzban servers** → tambahkan server (lihat contoh di README).
    Tekan **Check status** sampai berstatus `ONLINE`.
 4. **Admin → Products** → sesuaikan paket/harga (sudah ada 3 contoh dari seed).
-5. **Admin → Settings** → nama situs, tagline, kontak support, izin registrasi.
+5. **Admin → Settings** → nama situs, tagline, kontak support, izin registrasi, dan
+   **Expiry reminder (days before)** — berapa hari sebelum langganan habis email
+   pengingat dikirim melalui Resend.
+6. **Admin → Subscriptions** → tombol **Send expiry reminders now** menjalankan
+   pemeriksaan yang sama dengan job harian (praktis untuk menguji setup Resend).
+
+Catatan: kredensial hanya bisa diubah oleh **SUPER_ADMIN** dan setiap perubahan
+dicatat di audit log. Nilai asli tidak pernah dikirim ke browser — panel hanya
+menampilkan bentuk termasker (`****...1234`).
+
+### Verifikasi integrasi tanpa akses internet
+
+Sandbox/build environment sering tidak bisa menjangkau `api.resend.com` atau
+`www.bayar.gg`. Repo ini menyertakan stub lokal yang meniru kontrak resmi kedua
+API tersebut, sehingga seluruh alur (checkout → invoice → webhook → email) bisa
+diuji end-to-end:
+
+```bash
+node scripts/integration-stubs.js &                                   # port 4100
+RESEND_BASE_URL=http://127.0.0.1:4100/resend \
+BAYARGG_BASE_URL=http://127.0.0.1:4100/bayargg/api \
+node apps/api/preview-server.js &                                    # port 4000
+bash scripts/verify-functions.sh                                     # 55 pemeriksaan
+```
 
 ## 4. Konfigurasi Bayar.gg
 

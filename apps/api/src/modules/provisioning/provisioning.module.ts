@@ -8,6 +8,7 @@ import { MarzbanServer } from '../../database/entities/marzban-server.entity';
 import { ProvisioningProcessor } from './provisioning.processor';
 import { ServerStatusProcessor } from './server-status.processor';
 import { SubscriptionExpiryProcessor } from './subscription-expiry.processor';
+import { ExpiryReminderService } from './expiry-reminder.service';
 import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionsService } from './subscriptions.service';
 import { MarzbanModule } from '../marzban/marzban.module';
@@ -36,8 +37,9 @@ import { SettingsModule } from '../settings/settings.module';
     ProvisioningProcessor,
     ServerStatusProcessor,
     SubscriptionExpiryProcessor,
+    ExpiryReminderService,
     SubscriptionsService,
   ],
-  exports: [SubscriptionsService],
+  exports: [SubscriptionsService, ExpiryReminderService],
 })
 export class ProvisioningModule {}

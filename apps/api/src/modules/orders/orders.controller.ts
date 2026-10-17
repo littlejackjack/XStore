@@ -59,6 +59,13 @@ export class OrdersController {
     return this.ordersService.syncPaymentStatus(user, id);
   }
 
+  @Post('admin/orders/:id/retry-provisioning')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Re-queue Marzban provisioning for a paid order' })
+  retryProvisioning(@CurrentUser() actor: User, @Param('id', ParseUUIDPipe) id: string) {
+    return this.ordersService.retryProvisioning(actor, id);
+  }
+
   @Post('admin/orders/:id/resend-invoice')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Re-send the invoice + payment emails for a paid order' })

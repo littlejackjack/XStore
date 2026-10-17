@@ -237,6 +237,16 @@ User                Frontend              API                 Bayar.gg          
 
 ### Manajemen API key (Admin Panel → API Keys)
 
+Panel ini dipakai untuk **kedua** integrasi pihak ketiga:
+
+| Provider | Isi form | Dipakai untuk |
+|---|---|---|
+| `BAYARGG` | API Key (`API-…`) + **Webhook Secret** (`whsec_…` dari *Developer → Webhook & Callback*) | generate invoice QRIS, cek status pembayaran, verifikasi HMAC webhook |
+| `RESEND` | API Key (`re_…`) | email OTP, notifikasi pembayaran, invoice, pengingat expired |
+
+Tombol **Verify** di panel memanggil API asli provider (`GET /api/get-account-status.php`
+untuk Bayar.gg, `GET /api-keys` untuk Resend) dan menampilkan hasilnya.
+
 1. Super Admin membuka **Admin → API keys**, memasukkan key baru (form password).
 2. `ApiKeysService.rotate()` mengenkripsi nilai dengan **AES-256-GCM** (master key dari `ENCRYPTION_KEY`)
    dan menuliskan ke tabel `api_keys` — **tidak ada** penulisan ke file `.env` dari web request.
@@ -244,6 +254,24 @@ User                Frontend              API                 Bayar.gg          
    dipakai internal (`PaymentsService`, `MailService`).
 4. Perubahan dicatat di **audit log** (`API_KEY_ROTATED`, field sensitif otomatis `[REDACTED]`).
 5. Endpoint list hanya mengembalikan nilai **termasker** (`****…1234`).
+
+### Email transaksional (Resend)
+
+`MailService` mengirim empat jenis email, semuanya memakai key yang tersimpan
+terenkripsi di database (bukan `.env`):
+
+| Email | Kapan dikirim | Endpoint/pemicu |
+|---|---|---|
+| **Kode OTP** | login tanpa password / verifikasi email | `POST /api/auth/otp/request` + tab *Email code* di halaman login |
+| **Notifikasi pembayaran** | Bayar.gg mengonfirmasi pembayaran | webhook `payment.paid` **dan** fallback `POST /api/orders/:id/sync` |
+| **Invoice** | bersamaan dengan notifikasi pembayaran | sama seperti di atas; admin bisa kirim ulang dari **Admin → Orders → Resend invoice** |
+| **Pengingat expired** | job harian (07:00 UTC) untuk langganan yang akan berakhir | queue `notifications`, jendela hari diatur di **Admin → Settings** |
+
+Keamanan OTP: kode 6 angka **tidak pernah disimpan plaintext** (hanya hash bcrypt),
+sekali pakai, kedaluwarsa 10 menit, maksimal 5 percobaan, jeda 60 detik antar
+pengiriman, dan alamat yang tidak terdaftar mendapat respons yang identik
+(tidak bisa dipakai untuk enumerasi user). Kegagalan kirim email **tidak**
+membatalkan webhook — gateway tetap menerima `200` agar berhenti retry.
 
 ### Multi-server Marzban
 
@@ -304,7 +332,8 @@ Dokumentasi interaktif: set `SWAGGER_ENABLED=true` lalu buka `/api/docs`.
 cd apps/api
 npm install
 npm run build          # nest build
-npm test               # 50 test: crypto, webhook HMAC, Marzban, API keys, e2e
+npm test               # 79 test: crypto, webhook HMAC, Marzban, API keys, OTP,
+                        # pengingat expired, migrasi/entity parity, e2e
 
 # Frontend
 cd apps/web
@@ -323,9 +352,15 @@ Cakupan test yang terbukti lulus:
 - `apikeys.service.spec.ts` — enkripsi saat menyimpan, cache Redis, masking, audit
 - `marzban.service.spec.ts` — login + cache token, payload create user, retry 401, offline
 - `pgmem.spec.ts` — skema entity + migrasi SQL awal dieksekusi terhadap PostgreSQL
+- `otp.service.spec.ts` — hash kode, sekali pakai, kedaluwarsa, batas percobaan,
+  cooldown, tanpa enumerasi user
+- `subscription-expiry.spec.ts` — hanya langganan ACTIVE dalam jendela yang diingatkan,
+  dedupe `expiry_reminder_sent_at`, jendela dari Admin → Settings
+- `seed-flow.spec.ts` — parity entity ↔ migrasi (termasuk `email_otps`) + alur seed
 - `e2e-smoke.spec.ts` — boot penuh aplikasi: health, register/login, validasi, RBAC,
   pembuatan produk & server (password terenkripsi, tidak pernah di-echo), rotasi API key,
-  audit log, daftar server publik, penolakan webhook palsu, statistik
+  audit log, daftar server publik, penolakan webhook palsu, statistik, login OTP
+  end-to-end, verifikasi email, order id invalid → 400
 
 ---
 
@@ -386,6 +421,42 @@ docker compose exec -T db pg_dump -U xstore xstore > backup-$(date +%F).sql
 Detail lengkap: [`docs/SETUP.md`](docs/SETUP.md) · Alur internal: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ---
+
+### Verifikasi fungsi tanpa akses ke API asli
+
+Lingkungan build/sandbox tidak selalu punya akses keluar ke `api.resend.com` atau
+`www.bayar.gg`, dan menguji langsung memakan kuota serta membuat invoice sungguhan.
+Karena itu repo menyertakan **stub lokal** yang meniru kontrak resmi kedua API
+(path, bentuk payload, dan skema signature webhook yang identik):
+
+```bash
+# 1. jalankan stub (port 4100)
+node scripts/integration-stubs.js
+
+# 2. jalankan API preview dengan base URL menuju stub
+RESEND_BASE_URL=http://127.0.0.1:4100/resend \
+BAYARGG_BASE_URL=http://127.0.0.1:4100/bayargg/api \
+node apps/api/preview-server.js
+
+# 3. verifikasi 55 fungsi admin + buyer
+bash scripts/verify-functions.sh
+```
+
+Yang diperiksa script tersebut: login admin & buyer, panel API key (nilai selalu
+termasker, tidak pernah mentah, tidak bocor ke endpoint publik), verify key,
+rotasi key + audit log, CRUD produk, manajemen multi-server (password tidak pernah
+dikembalikan, server `MAINTENANCE` hilang dari checkout), settings, statistik,
+checkout → invoice Bayar.gg, webhook palsu/stale ditolak (401), webhook valid →
+email pembayaran + invoice terkirim, dashboard buyer, kirim ulang invoice,
+login OTP end-to-end, dan pengingat expired.
+
+Untuk menguji terhadap **API sungguhan** (dari mesin yang punya akses internet),
+stub tidak diperlukan — cukup tekan tombol **Verify** di Admin → API keys:
+
+```bash
+curl -X POST https://domain-anda.com/api/admin/api-keys/RESEND/verify \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN"
+```
 
 ## 10. Catatan produksi
 

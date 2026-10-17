@@ -15,8 +15,6 @@ const ADMIN_KEYS = [
   ...PUBLIC_KEYS,
   'order.autoProvision',
   'notifications.expiryReminderDays',
-  'notifications.paymentEmailEnabled',
-  'notifications.invoiceEmailEnabled',
 ];
 
 /**

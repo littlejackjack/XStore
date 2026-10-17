@@ -11,54 +11,54 @@ export type ServerStatus = 'ONLINE' | 'OFFLINE' | 'MAINTENANCE';
 @Entity('marzban_servers')
 export class MarzbanServer extends UuidEntity {
 
-  @Column({ type: 'varchar', length: 120 })
+  @Column({ type: 'varchar', length: 120, name: 'name',})
   name: string;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 255, name: 'base_url',})
   baseUrl: string;
 
-  @Column({ type: 'varchar', length: 120 })
+  @Column({ type: 'varchar', length: 120, name: 'username',})
   username: string;
 
   /** AES-256-GCM envelope (see common/utils/crypto.util.ts). */
-  @Column({ type: 'text' })
+  @Column({ type: 'text', name: 'password_encrypted',})
   passwordEncrypted: string;
 
-  @Column({ type: 'varchar', length: 20, default: 'ONLINE' })
+  @Column({ type: 'varchar', length: 20, default: 'ONLINE', name: 'status',})
   status: ServerStatus;
 
   /** Users currently active on the panel, refreshed by the status worker. */
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'int', default: 0, name: 'active_users',})
   activeUsers: number;
 
   /** Optional hard cap; null = unlimited capacity. */
-  @Column({ type: 'int', nullable: true })
+  @Column({ type: 'int', nullable: true, name: 'max_capacity',})
   maxCapacity: number | null;
 
-  @Column({ type: 'varchar', length: 120, nullable: true })
+  @Column({ type: 'varchar', length: 120, nullable: true, name: 'location',})
   location: string | null;
 
   /** Lower value = shown first in checkout. */
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'int', default: 0, name: 'priority',})
   priority: number;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'notes',})
   notes: string | null;
 
   /** Soft switch - disabled servers never appear at checkout. */
-  @Column({ type: 'boolean', default: true })
+  @Column({ type: 'boolean', default: true, name: 'is_active',})
   isActive: boolean;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true, name: 'last_checked_at',})
   lastCheckedAt: Date | null;
 
-  @Column({ type: 'varchar', length: 64, nullable: true })
+  @Column({ type: 'varchar', length: 64, nullable: true, name: 'last_error',})
   lastError: string | null;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at',})
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at',})
   updatedAt: Date;
 }

@@ -10,26 +10,26 @@ export type UserStatus = 'ACTIVE' | 'SUSPENDED';
 export class User extends UuidEntity {
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 255, name: 'email',})
   email: string;
 
   /** bcrypt hash - the plain password is never stored. */
-  @Column({ type: 'varchar', length: 255, select: false })
+  @Column({ type: 'varchar', length: 255, select: false, name: 'password_hash',})
   passwordHash: string;
 
-  @Column({ type: 'varchar', length: 120 })
+  @Column({ type: 'varchar', length: 120, name: 'name',})
   name: string;
 
-  @Column({ type: 'varchar', length: 20, default: 'USER' })
+  @Column({ type: 'varchar', length: 20, default: 'USER', name: 'role',})
   role: UserRole;
 
-  @Column({ type: 'varchar', length: 20, default: 'ACTIVE' })
+  @Column({ type: 'varchar', length: 20, default: 'ACTIVE', name: 'status',})
   status: UserStatus;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at',})
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at',})
   updatedAt: Date;
 
   @OneToMany('Order', 'user')

@@ -61,8 +61,10 @@ async function main(): Promise<void> {
   const productRepository = AppDataSource.getRepository(Product);
   const productCount = await productRepository.count();
   if (productCount === 0) {
-    await productRepository.insert([
-      {
+    // `save(create())` - not `insert()` - so the @BeforeInsert hook on
+    // UuidEntity assigns the primary key.
+    await productRepository.save([
+      productRepository.create({
         slug: 'starter-1-bulan',
         name: 'Starter - 1 Bulan',
         description: 'Cocok untuk mencoba layanan. Akses semua server.',
@@ -72,8 +74,8 @@ async function main(): Promise<void> {
         features: ['Semua lokasi server', 'Kecepatan hingga 1 Gbps', 'Dukungan 1 perangkat'],
         isActive: true,
         sortOrder: 1,
-      },
-      {
+      }),
+      productRepository.create({
         slug: 'pro-3-bulan',
         name: 'Pro - 3 Bulan',
         description: 'Paket terpopuler dengan kuota lebih besar.',
@@ -83,8 +85,8 @@ async function main(): Promise<void> {
         features: ['Semua lokasi server', 'Kecepatan hingga 1 Gbps', 'Dukungan 3 perangkat', 'Prioritas dukungan'],
         isActive: true,
         sortOrder: 2,
-      },
-      {
+      }),
+      productRepository.create({
         slug: 'unlimited-1-tahun',
         name: 'Unlimited - 1 Tahun',
         description: 'Tanpa batas kuota untuk pengguna berat.',
@@ -94,7 +96,7 @@ async function main(): Promise<void> {
         features: ['Semua lokasi server', 'Kuota unlimited', 'Dukungan 5 perangkat', 'Prioritas dukungan'],
         isActive: true,
         sortOrder: 3,
-      },
+      }),
     ]);
     console.log('[seed] created demo products');
   }

@@ -11,29 +11,29 @@ import { User } from './user.entity';
 export class RefreshToken extends UuidEntity {
 
   @Index()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'user_id',})
   userId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 64 })
+  @Column({ type: 'varchar', length: 64, name: 'token_hash',})
   tokenHash: string;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz', name: 'expires_at',})
   expiresAt: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true, name: 'revoked_at',})
   revokedAt: Date | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'user_agent',})
   userAgent: string | null;
 
-  @Column({ type: 'varchar', length: 64, nullable: true })
+  @Column({ type: 'varchar', length: 64, nullable: true, name: 'ip',})
   ip: string | null;
 
-  @Column({ type: 'timestamptz', default: () => 'now()' })
+  @Column({ type: 'timestamptz', default: () => 'now()', name: 'created_at',})
   createdAt: Date;
 }

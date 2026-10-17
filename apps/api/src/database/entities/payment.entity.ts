@@ -7,29 +7,29 @@ import { Order } from './order.entity';
 export class Payment extends UuidEntity {
 
   @Index()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'order_id',})
   orderId: string;
 
   @ManyToOne(() => Order, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'orderId' })
+  @JoinColumn({ name: 'order_id' })
   order: Order;
 
-  @Column({ type: 'varchar', length: 32, default: 'BAYARGG' })
+  @Column({ type: 'varchar', length: 32, default: 'BAYARGG', name: 'provider',})
   provider: string;
 
-  @Column({ type: 'varchar', length: 128 })
+  @Column({ type: 'varchar', length: 128, name: 'invoice_id',})
   invoiceId: string;
 
-  @Column({ type: 'bigint' })
+  @Column({ type: 'bigint', name: 'amount',})
   amount: number;
 
-  @Column({ type: 'varchar', length: 32 })
+  @Column({ type: 'varchar', length: 32, name: 'status',})
   status: string;
 
   /** Raw provider payload - invaluable for dispute resolution. */
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, name: 'raw_payload',})
   rawPayload: Record<string, unknown> | null;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at',})
   createdAt: Date;
 }

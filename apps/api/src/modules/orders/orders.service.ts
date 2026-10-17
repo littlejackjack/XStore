@@ -170,13 +170,13 @@ export class OrdersService {
     // Daily revenue series for the last 7 days. Raw SQL is used because the
     // date cast is not expressible through the query-builder alias parser.
     const last7Days = await this.dataSource.query(
-      `SELECT "createdAt"::date AS "date",
-              COALESCE(SUM("amountIdr"), 0) AS "revenue",
+      `SELECT "created_at"::date AS "date",
+              COALESCE(SUM("amount_idr"), 0) AS "revenue",
               COUNT(*) AS "orders"
          FROM "orders"
         WHERE "status" = ANY($1)
-          AND "createdAt" >= NOW() - INTERVAL '7 days'
-        GROUP BY "createdAt"::date
+          AND "created_at" >= NOW() - INTERVAL '7 days'
+        GROUP BY "created_at"::date
         ORDER BY "date" ASC`,
       [['PAID', 'PROVISIONING', 'COMPLETED']],
     );

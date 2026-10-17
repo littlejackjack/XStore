@@ -3,15 +3,15 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryColumn, UpdateDateColum
 /** Key/value store for editable site settings (cached in Redis). */
 @Entity('settings')
 export class Setting {
-  @PrimaryColumn({ type: 'varchar', length: 120 })
+  @PrimaryColumn({ type: 'varchar', length: 120, name: 'key',})
   key: string;
 
-  @Column({ type: 'jsonb' })
+  @Column({ type: 'jsonb', name: 'value',})
   value: unknown;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at',})
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at',})
   updatedAt: Date;
 }

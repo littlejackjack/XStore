@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
  * versions, and avoids a round-trip per insert.
  */
 export abstract class UuidEntity {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid', name: 'id',})
   id: string;
 
   @BeforeInsert()

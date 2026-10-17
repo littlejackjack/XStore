@@ -255,6 +255,13 @@ describe('XStore API (e2e smoke)', () => {
         .expect(401);
     });
 
+    it('rejects a malformed order id with 400 instead of 500', async () => {
+      await request(app.getHttpServer())
+        .get('/api/orders/not-a-uuid')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(400);
+    });
+
     it('returns sales statistics', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/admin/stats')

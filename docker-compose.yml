@@ -49,6 +49,8 @@ services:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+    # Uncomment to run the image built by GitHub Actions instead of building locally:
+    # image: ghcr.io/littlejackjack/xstore-api:arena-502c634c-xstore
     container_name: xstore-app
     restart: unless-stopped
     env_file: .env
@@ -67,6 +69,8 @@ services:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+    # Uncomment to run the image built by GitHub Actions instead of building locally:
+    # image: ghcr.io/littlejackjack/xstore-api:arena-502c634c-xstore
     container_name: xstore-worker
     restart: unless-stopped
     command: ["sh", "scripts/worker-entrypoint.sh"]
@@ -86,6 +90,8 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    # Uncomment to run the image built by GitHub Actions instead of building locally:
+    # image: ghcr.io/littlejackjack/xstore-web:arena-502c634c-xstore
     container_name: xstore-web
     restart: unless-stopped
     env_file: .env

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { IsIn, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
@@ -49,13 +49,13 @@ export class OrdersController {
 
   @Get('orders/:id')
   @ApiOperation({ summary: 'Order detail (owner or admin)' })
-  detail(@CurrentUser() user: User, @Param('id') id: string) {
+  detail(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.findOne(user, id);
   }
 
   @Post('orders/:id/sync')
   @ApiOperation({ summary: 'Re-check payment status with Bayar.gg (webhook fallback)' })
-  sync(@CurrentUser() user: User, @Param('id') id: string) {
+  sync(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.syncPaymentStatus(user, id);
   }
 

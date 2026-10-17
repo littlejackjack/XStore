@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -32,7 +32,11 @@ export class UsersController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a user role or status' })
-  update(@CurrentUser() actor: User, @Param('id') id: string, @Body() dto: UpdateUserDto) {
+  update(
+    @CurrentUser() actor: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserDto,
+  ) {
     return this.usersService.updateRoleOrStatus(actor, id, dto);
   }
 }

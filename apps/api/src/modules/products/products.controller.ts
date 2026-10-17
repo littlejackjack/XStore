@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, ParseUUIDPipe} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -23,7 +23,7 @@ export class ProductsController {
   @Public()
   @Get('products/:id')
   @ApiOperation({ summary: 'Single product detail' })
-  detail(@Param('id') id: string) {
+  detail(@Param('id', ParseUUIDPipe) id: string) {
     return this.productsService.findPublicById(id);
   }
 
@@ -45,21 +45,21 @@ export class ProductsController {
   @ApiBearerAuth()
   @Roles('ADMIN')
   @Put('admin/products/:id')
-  update(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() actor: User, @Req() request: Request) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProductDto, @CurrentUser() actor: User, @Req() request: Request) {
     return this.productsService.update(id, dto, { id: actor.id, email: actor.email }, request.ip);
   }
 
   @ApiBearerAuth()
   @Roles('ADMIN')
   @Patch('admin/products/:id')
-  updatePartial(@Param('id') id: string, @Body() dto: UpdateProductDto, @CurrentUser() actor: User, @Req() request: Request) {
+  updatePartial(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProductDto, @CurrentUser() actor: User, @Req() request: Request) {
     return this.productsService.update(id, dto, { id: actor.id, email: actor.email }, request.ip);
   }
 
   @ApiBearerAuth()
   @Roles('ADMIN')
   @Delete('admin/products/:id')
-  remove(@Param('id') id: string, @CurrentUser() actor: User, @Req() request: Request) {
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: User, @Req() request: Request) {
     return this.productsService.remove(id, { id: actor.id, email: actor.email }, request.ip);
   }
 }

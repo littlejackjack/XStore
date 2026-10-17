@@ -123,6 +123,49 @@ docker tag xstore-api:latest registry.example.com/xstore-api:1.0.0
 docker push registry.example.com/xstore-api:1.0.0
 ```
 
+### Image yang sudah di-build lewat GitHub Actions ✅
+
+Setiap push ke branch `main`/`arena/*` (dan tag `v*`) memicu workflow
+`.github/workflows/docker-build.yml` yang:
+
+1. **test** — install, build, jalankan 55 test, migrasi SQL + seed ke PostgreSQL 16
+   sungguhan, lalu smoke-test API server (health, register, login, 401 untuk
+   route admin tanpa auth, 401 untuk webhook bertanda tangan palsu);
+2. **compose** — validasi `docker-compose.yml` (interpolasi + struktur);
+3. **build** — build image `apps/api` & `apps/web` dengan buildx dan push ke
+   **GHCR** (cache GHA untuk build cepat).
+
+Image hasil build (repo publik → bisa langsung di-pull):
+
+```bash
+# API (dipakai service app & worker)
+docker pull ghcr.io/littlejackjack/xstore-api:arena-502c634c-xstore
+docker pull ghcr.io/littlejackjack/xstore-api:sha-<commit-sha>
+
+# Frontend
+docker pull ghcr.io/littlejackjack/xstore-web:arena-502c634c-xstore
+docker pull ghcr.io/littlejackjack/xstore-web:sha-<commit-sha>
+```
+
+Menjalankan image tanpa build dari source:
+
+```bash
+# API
+docker run -d --name xstore-app --env-file .env \
+  -p 4000:4000 ghcr.io/littlejackjack/xstore-api:arena-502c634c-xstore
+
+# Frontend (butuh API yang bisa dijangkau pada URL publik yang sama)
+docker run -d --name xstore-web -p 3000:3000 \
+  ghcr.io/littlejackjack/xstore-web:arena-502c634c-xstore
+```
+
+> Untuk memakai image GHCR di `docker-compose.yml` (tanpa build lokal),
+> uncomment baris `image:` pada masing-masing service. Secara default compose
+> tetap melakukan build dari source agar `docker compose up -d --build`
+> selalu menghasilkan image terbaru dari kode di checkout ini.
+
+Status workflow terakhir: <img src="https://github.com/littlejackjack/XStore/actions/workflows/docker-build.yml/badge.svg" alt="docker-build">
+
 > **Catatan lingkungan pengembangan ini:** sandbox tempat repo ini dibuat tidak memiliki Docker daemon,
 > sehingga perintah di atas belum bisa dieksekusi di sini. Sebagai gantinya, kode sudah **dibuktikan
 > berjalan**: backend di-build dengan `nest build` dan **50/50 test lulus** (termasuk smoke test yang

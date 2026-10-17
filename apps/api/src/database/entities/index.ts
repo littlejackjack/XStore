@@ -6,6 +6,7 @@ export * from './marzban-server.entity';
 export * from './order.entity';
 export * from './payment.entity';
 export * from './subscription.entity';
+export * from './email-otp.entity';
 export * from './api-key.entity';
 export * from './setting.entity';
 export * from './audit-log.entity';

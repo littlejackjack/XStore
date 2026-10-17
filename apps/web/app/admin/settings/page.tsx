@@ -13,6 +13,7 @@ export default function AdminSettingsPage() {
     'site.supportContact': '',
     'site.registrationEnabled': true,
     'order.autoProvision': true,
+    'notifications.expiryReminderDays': 3,
   });
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -29,6 +30,7 @@ export default function AdminSettingsPage() {
           'site.supportContact': String(data['site.supportContact'] ?? ''),
           'site.registrationEnabled': Boolean(data['site.registrationEnabled'] ?? true),
           'order.autoProvision': Boolean(data['order.autoProvision'] ?? true),
+          'notifications.expiryReminderDays': Number(data['notifications.expiryReminderDays'] ?? 3),
         });
       })
       .catch((err) => setError(err.message));
@@ -88,6 +90,22 @@ export default function AdminSettingsPage() {
             <label htmlFor="registration" className="text-sm">
               Allow new registrations
             </label>
+          </div>
+          <div>
+            <label className="label">Expiry reminder (days before)</label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={30}
+              value={form['notifications.expiryReminderDays']}
+              onChange={(e) =>
+                setForm({ ...form, 'notifications.expiryReminderDays': Number(e.target.value) || 1 })
+              }
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Customers receive an email (Resend) this many days before their subscription expires.
+            </p>
           </div>
           <div className="sm:col-span-2">
             <button type="submit" className="btn-primary" disabled={saving}>

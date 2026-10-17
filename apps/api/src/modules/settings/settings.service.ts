@@ -10,6 +10,15 @@ const CACHE_TTL_SECONDS = 300;
 
 const PUBLIC_KEYS = ['site.name', 'site.tagline', 'site.currency', 'site.registrationEnabled', 'site.supportContact'];
 
+/** Keys an admin may edit from Admin Panel -> Settings. */
+const ADMIN_KEYS = [
+  ...PUBLIC_KEYS,
+  'order.autoProvision',
+  'notifications.expiryReminderDays',
+  'notifications.paymentEmailEnabled',
+  'notifications.invoiceEmailEnabled',
+];
+
 /**
  * Editable site settings with Redis caching.
  * Public values are served to unauthenticated visitors; the admin endpoint
@@ -50,7 +59,7 @@ export class SettingsService {
   }
 
   async update(values: Record<string, unknown>, actor: { id: string; email: string }, ip?: string): Promise<Record<string, unknown>> {
-    const allowed = [...PUBLIC_KEYS, 'order.autoProvision'];
+    const allowed = ADMIN_KEYS;
     const entries = Object.entries(values).filter(([key]) => allowed.includes(key));
     if (entries.length === 0) throw new BadRequestException('No updatable settings supplied');
 

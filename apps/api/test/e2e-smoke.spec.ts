@@ -35,6 +35,7 @@ describe('XStore API (e2e smoke)', () => {
   let dataSource: DataSource;
   let createdProductId = '';
   let createdServerId = '';
+  let mailed: Array<{ to: string; subject: string; html: string; text?: string }> = [];
 
   beforeAll(async () => {
     const db = newDb({ autoCreateForeignKeyIndices: true });
@@ -57,6 +58,16 @@ describe('XStore API (e2e smoke)', () => {
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     await app.init();
+
+    // Record every transactional email the app tries to send (the Resend key is
+    // intentionally absent, so nothing leaves the sandbox - we only assert the
+    // intent, subject and payload).
+    mailed = [];
+    const { MailService } = await import('../src/modules/mail/mail.service');
+    jest.spyOn(app.get(MailService), 'send').mockImplementation(async (input: any) => {
+      mailed.push(input);
+      return { ok: true };
+    });
   }, 60_000);
 
   afterAll(async () => {
@@ -253,6 +264,76 @@ describe('XStore API (e2e smoke)', () => {
         .set('x-webhook-timestamp', now)
         .send({ invoice_id: 'BAYAR-X', status: 'paid', final_amount: 69000 })
         .expect(401);
+    });
+
+    it('logs a customer in with an emailed one-time code (OTP)', async () => {
+      const { MailService } = await import('../src/modules/mail/mail.service');
+      const otpSpy = jest.spyOn(app.get(MailService), 'sendOtpCode');
+
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/request')
+        .send({ email: 'buyer@example.com', purpose: 'LOGIN' })
+        .expect(200);
+
+      const code = otpSpy.mock.calls[0][1] as string;
+      expect(code).toMatch(/^\d{6}$/);
+
+      const verified = await request(app.getHttpServer())
+        .post('/api/auth/otp/verify')
+        .send({ email: 'buyer@example.com', code })
+        .expect(200);
+      expect(verified.body.accessToken).toBeDefined();
+      expect(verified.body.user.email).toBe('buyer@example.com');
+
+      // The code is single use.
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/verify')
+        .send({ email: 'buyer@example.com', code })
+        .expect(401);
+
+      // The code itself is never persisted in clear text.
+      const stored = await dataSource.getRepository(entities.EmailOtp).find();
+      expect(stored.length).toBeGreaterThan(0);
+      expect(stored.some((row) => row.codeHash.includes(code))).toBe(false);
+    });
+
+    it('rejects a wrong OTP code', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/request')
+        .send({ email: 'buyer@example.com', purpose: 'LOGIN' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/verify')
+        .send({ email: 'buyer@example.com', code: '000000' })
+        .expect(401);
+    });
+
+    it('does not reveal whether an address exists (OTP request)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/request')
+        .send({ email: 'nobody@example.com', purpose: 'LOGIN' })
+        .expect(200);
+      expect(mailed.some((mail) => mail.to === 'nobody@example.com')).toBe(false);
+    });
+
+    it('verifies an email address with a one-time code', async () => {
+      const { MailService } = await import('../src/modules/mail/mail.service');
+      const otpSpy = jest.spyOn(app.get(MailService), 'sendOtpCode');
+
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/request')
+        .send({ email: 'buyer@example.com', purpose: 'EMAIL_VERIFICATION' })
+        .expect(200);
+
+      const code = otpSpy.mock.calls.at(-1)![1] as string;
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/verify')
+        .send({ email: 'buyer@example.com', code, purpose: 'EMAIL_VERIFICATION' })
+        .expect(200);
+
+      const user = await dataSource.getRepository(entities.User).findOneBy({ email: 'buyer@example.com' });
+      expect(user?.emailVerified).toBe(true);
     });
 
     it('rejects a malformed order id with 400 instead of 500', async () => {

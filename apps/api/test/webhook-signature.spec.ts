@@ -28,6 +28,11 @@ function buildService(order: any) {
     get: jest.fn().mockReturnValue(MASTER_KEY),
   } as unknown as ConfigService;
   const queue = { add: jest.fn().mockResolvedValue(undefined) };
+  const mail = {
+    sendPaymentReceived: jest.fn().mockResolvedValue({ ok: true }),
+    sendInvoice: jest.fn().mockResolvedValue({ ok: true }),
+  };
+  const settings = { get: jest.fn().mockResolvedValue('XStore') };
 
   const service = new WebhooksService(
     orderRepository as any,
@@ -35,8 +40,10 @@ function buildService(order: any) {
     apiKeys as any,
     config as any,
     queue as any,
+    mail as any,
+    settings as any,
   );
-  return { service, orderRepository, paymentRepository, queue };
+  return { service, orderRepository, paymentRepository, queue, mail };
 }
 
 function sign(invoiceId: string, status: string, finalAmount: string, timestamp: string) {
@@ -49,6 +56,9 @@ const ORDER = {
   amountIdr: 50000,
   status: 'PENDING',
   bayarInvoiceId: 'BAYAR-123',
+  paidAt: null as Date | null,
+  user: { id: 'user-1', email: 'buyer@example.com', name: 'Buyer' },
+  product: { id: 'product-1', name: 'Pro 1 Month', durationDays: 30 },
 };
 
 describe('WebhooksService (Bayar.gg callback)', () => {
@@ -76,6 +86,53 @@ describe('WebhooksService (Bayar.gg callback)', () => {
       expect.objectContaining({ status: 'PAID' }),
     );
     expect(queue.add).toHaveBeenCalledWith('provision-subscription', { orderId: 'order-1' }, expect.anything());
+  });
+
+  it('sends the payment notification and the invoice email (Resend)', async () => {
+    const { service, mail } = buildService({ ...ORDER });
+    await service.handleBayarGgCallback({
+      payload: {
+        invoice_id: invoiceId,
+        status: 'paid',
+        final_amount: 50000,
+        amount: 50000,
+        paid_amount: 50000,
+      },
+      signature: sign(invoiceId, 'paid', '50000', now),
+      timestamp: now,
+    });
+
+    expect(mail.sendPaymentReceived).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'buyer@example.com',
+        orderNumber: 'XST-TEST-0001',
+        amountIdr: 50000,
+        invoiceId,
+      }),
+    );
+    expect(mail.sendInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'buyer@example.com',
+        customerName: 'Buyer',
+        orderNumber: 'XST-TEST-0001',
+        productName: 'Pro 1 Month',
+        durationDays: 30,
+        amountIdr: 50000,
+        invoiceId,
+      }),
+    );
+  });
+
+  it('never fails the webhook when email delivery fails', async () => {
+    const ctx = buildService({ ...ORDER });
+    ctx.mail.sendPaymentReceived = jest.fn().mockRejectedValue(new Error('resend down'));
+    const result = await ctx.service.handleBayarGgCallback({
+      payload: { invoice_id: invoiceId, status: 'paid', final_amount: 50000, paid_amount: 50000 },
+      signature: sign(invoiceId, 'paid', '50000', now),
+      timestamp: now,
+    });
+    expect(result.processed).toBe(true); // gateway still gets its 200
+    expect(ctx.queue.add).toHaveBeenCalled();
   });
 
   it('rejects a forged signature', async () => {

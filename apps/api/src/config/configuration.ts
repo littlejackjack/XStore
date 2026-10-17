@@ -102,6 +102,12 @@ export const configuration = registerAs('app', () => {
       fallbackApiKey: process.env.RESEND_API_KEY ?? '',
     },
 
+    otp: {
+      ttlMinutes: int(process.env.OTP_TTL_MINUTES, 10),
+      /** Days before expiry that the reminder email is sent. */
+      expiryReminderDays: int(process.env.EXPIRY_REMINDER_DAYS, 3),
+    },
+
     marzban: {
       defaultInbounds: marzbanInbounds,
       statusCheckIntervalMinutes: int(process.env.MARZBAN_STATUS_CHECK_INTERVAL, 5),

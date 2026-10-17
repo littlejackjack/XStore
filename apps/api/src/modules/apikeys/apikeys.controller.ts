@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { User } from '../../database/entities/user.entity';
 import { ApiKeysService } from './apikeys.service';
+import { ConfigService } from '@nestjs/config';
 import { RotateApiKeyDto } from './dto/apikey.dto';
 import { ApiKeyProvider } from '../../database/entities/api-key.entity';
 
@@ -19,7 +20,10 @@ import { ApiKeyProvider } from '../../database/entities/api-key.entity';
 @Roles('SUPER_ADMIN')
 @Controller('admin/api-keys')
 export class ApiKeysController {
-  constructor(private readonly apiKeysService: ApiKeysService) {}
+  constructor(
+    private readonly apiKeysService: ApiKeysService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List configured providers (masked values only)' })
@@ -50,19 +54,19 @@ export class ApiKeysController {
   @ApiOperation({ summary: 'Verify the stored key against the provider API' })
   async verify(@Param('provider') provider: ApiKeyProvider) {
     if (provider === 'BAYARGG') {
-      // Lightweight authenticated call - returns the available payment methods.
+      // Lightweight authenticated call - account + integration status.
       const { apiKey } = await this.apiKeysService.getOrThrow('BAYARGG');
-      const baseUrl = 'https://www.bayar.gg/api';
-      const response = await fetch(`${baseUrl}/get-payment-methods.php`, {
+      const baseUrl = this.config.get<string>('app.bayargg.baseUrl')!;
+      const response = await fetch(`${baseUrl}/get-account-status.php`, {
         headers: { 'X-API-Key': apiKey },
       });
-      const ok = response.ok;
-      return { provider, verified: ok, status: response.status };
+      return { provider, verified: response.ok, status: response.status };
     }
 
     if (provider === 'RESEND') {
       const { apiKey } = await this.apiKeysService.getOrThrow('RESEND');
-      const response = await fetch('https://api.resend.com/api-keys', {
+      const baseUrl = this.config.get<string>('app.resend.baseUrl')!;
+      const response = await fetch(`${baseUrl}/api-keys`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       return { provider, verified: response.ok, status: response.status };

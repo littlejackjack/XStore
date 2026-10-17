@@ -11,6 +11,8 @@ import { ProductsService } from '../products/products.service';
 import { ServersService } from '../servers/servers.service';
 import { PaymentsService } from '../payments/payments.service';
 import { AuditService } from '../audit/audit.service';
+import { MailService } from '../mail/mail.service';
+import { SettingsService } from '../settings/settings.service';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { randomOrderSuffix } from '../../common/utils/random.util';
@@ -32,6 +34,8 @@ export class OrdersService {
     @InjectQueue('provisioning')
     private readonly provisioningQueue: Queue,
     private readonly dataSource: DataSource,
+    private readonly mail: MailService,
+    private readonly settings: SettingsService,
   ) {}
 
   /**
@@ -118,6 +122,11 @@ export class OrdersService {
       order.status = 'PAID';
       order.paidAt = new Date();
       await this.orderRepository.save(order);
+
+      // Same customer emails as the webhook path (this endpoint is the fallback
+      // used when the gateway callback is delayed or lost).
+      await this.notifyPayment(order, order.bayarInvoiceId, result.finalAmount);
+
       await this.provisioningQueue.add(
         'provision-subscription',
         { orderId: order.id },
@@ -128,6 +137,54 @@ export class OrdersService {
       await this.orderRepository.save(order);
     }
     return this.toView(order, order.product, order.server);
+  }
+
+  /** Payment-received + invoice emails (shared by the webhook and sync paths). */
+  private async notifyPayment(order: Order, invoiceId: string, paidAmount: number): Promise<void> {
+    const full = await this.orderRepository.findOne({
+      where: { id: order.id },
+      relations: { user: true, product: true },
+    });
+    if (!full?.user?.email) return;
+    try {
+      await this.mail.sendPaymentReceived({
+        email: full.user.email,
+        orderNumber: full.orderNumber,
+        amountIdr: paidAmount || Number(full.amountIdr),
+        invoiceId,
+      });
+      await this.mail.sendInvoice({
+        email: full.user.email,
+        customerName: full.user.name,
+        orderNumber: full.orderNumber,
+        productName: full.product?.name ?? 'XStore subscription',
+        durationDays: full.product?.durationDays ?? 0,
+        amountIdr: paidAmount || Number(full.amountIdr),
+        invoiceId,
+        paidAt: full.paidAt ?? new Date(),
+        siteName: await this.settings.get<string>('site.name', 'XStore'),
+      });
+    } catch (error) {
+      this.logger.error(`Failed to send payment emails for ${full.orderNumber}: ${(error as Error).message}`);
+    }
+  }
+
+  /** Re-sends the invoice email for a paid order (admin action). */
+  async resendInvoice(actor: User, id: string) {
+    const order = await this.findOne(actor, id);
+    if (!['PAID', 'PROVISIONING', 'COMPLETED'].includes(order.status)) {
+      throw new BadRequestException('Invoice emails are only available for paid orders');
+    }
+    await this.notifyPayment(order, order.bayarInvoiceId ?? '-', Number(order.amountIdr));
+    await this.audit.record({
+      action: 'INVOICE_EMAIL_RESENT',
+      entity: 'Order',
+      entityId: order.id,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      metadata: { orderNumber: order.orderNumber },
+    });
+    return { sent: true };
   }
 
   async listAll(query: { page: number; limit: number; status?: string }) {

@@ -9,6 +9,7 @@ import { newDb } from 'pg-mem';
 import { DataSource } from 'typeorm';
 import * as entities from '../src/database/entities';
 import { InitialSchema1700000000000 } from '../src/database/migrations/1700000000000-InitialSchema';
+import { EmailOtpAndExpiryReminders1700000100000 } from '../src/database/migrations/1700000100000-EmailOtpAndExpiryReminders';
 import { hashPassword } from '../src/modules/auth/password.util';
 
 let dataSource: DataSource;
@@ -32,6 +33,7 @@ beforeAll(async () => {
   runner.query = (async (query: string, ...rest: unknown[]) =>
     /CREATE EXTENSION/i.test(query) ? ([] as any) : (original as any)(query, ...rest)) as any;
   await new InitialSchema1700000000000().up(runner);
+  await new EmailOtpAndExpiryReminders1700000100000().up(runner);
 });
 
 afterAll(async () => {

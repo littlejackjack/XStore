@@ -7,12 +7,16 @@ import { Payment } from '../../database/entities/payment.entity';
 import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 import { ApiKeysModule } from '../apikeys/apikeys.module';
+import { MailModule } from '../mail/mail.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Order, Payment]),
     ConfigModule,
     ApiKeysModule,
+    MailModule,
+    SettingsModule,
     BullModule.registerQueue({ name: 'provisioning' }),
   ],
   controllers: [WebhooksController],

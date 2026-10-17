@@ -7,6 +7,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithOtp: (email: string, code: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -36,6 +37,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(payload.user);
   }, []);
 
+  const loginWithOtp = useCallback(async (email: string, code: string) => {
+    const payload = await endpoints.verifyOtp(email, code, 'LOGIN');
+    setAccessToken(payload.accessToken);
+    setUser(payload.user);
+  }, []);
+
   const register = useCallback(async (email: string, password: string, name: string) => {
     const payload = await endpoints.register(email, password, name);
     setAccessToken(payload.accessToken);
@@ -49,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, loading, login, loginWithOtp, register, logout }}>{children}</AuthContext.Provider>
   );
 }
 

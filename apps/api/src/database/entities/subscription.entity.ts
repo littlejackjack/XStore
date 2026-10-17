@@ -59,6 +59,10 @@ export class Subscription extends UuidEntity {
   @Column({ type: 'timestamptz', nullable: true, name: 'expire_at',})
   expireAt: Date | null;
 
+  /** Set when the "subscription expiring soon" email has been sent (dedupe). */
+  @Column({ type: 'timestamptz', nullable: true, name: 'expiry_reminder_sent_at',})
+  expiryReminderSentAt: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at',})
   createdAt: Date;
 

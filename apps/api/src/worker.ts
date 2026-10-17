@@ -11,6 +11,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ServerStatusProcessor } from './modules/provisioning/server-status.processor';
+import { SubscriptionExpiryProcessor } from './modules/provisioning/subscription-expiry.processor';
 import { Queue } from 'bullmq';
 import { getQueueToken } from '@nestjs/bullmq';
 
@@ -27,8 +28,12 @@ async function bootstrap(): Promise<void> {
   const processor = app.get(ServerStatusProcessor, { strict: false });
   await ServerStatusProcessor.schedule(statusQueue, processor.intervalMinutes);
 
+  // Daily subscription-expiry reminder emails (Resend).
+  const notificationsQueue = app.get<Queue>(getQueueToken('notifications'), { strict: false });
+  await SubscriptionExpiryProcessor.schedule(notificationsQueue);
+
   const logger = new Logger('Worker');
-  logger.log('XStore worker started (provisioning + server status queues)');
+  logger.log('XStore worker started (provisioning, server status, notifications queues)');
 
   const shutdown = async (signal: string) => {
     logger.log(`Received ${signal} - shutting down worker`);

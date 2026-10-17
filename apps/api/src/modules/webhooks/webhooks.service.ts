@@ -8,6 +8,8 @@ import { ApiKeysService } from '../apikeys/apikeys.service';
 import { hmacSha256Hex, safeEqual } from '../../common/utils/crypto.util';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
+import { MailService } from '../mail/mail.service';
+import { SettingsService } from '../settings/settings.service';
 
 /** Reject callbacks whose timestamp is older than this (replay protection). */
 const MAX_TIMESTAMP_SKEW_SECONDS = 300;
@@ -32,6 +34,8 @@ export class WebhooksService {
     private readonly config: ConfigService,
     @InjectQueue('provisioning')
     private readonly provisioningQueue: Queue,
+    private readonly mail: MailService,
+    private readonly settings: SettingsService,
   ) {}
 
   async handleBayarGgCallback(input: BayarGgCallbackInput) {
@@ -75,7 +79,10 @@ export class WebhooksService {
     }
 
     // ---- 4. locate the order & cross-check the amount ----------------------
-    const order = await this.orderRepository.findOne({ where: { bayarInvoiceId: invoiceId } });
+    const order = await this.orderRepository.findOne({
+      where: { bayarInvoiceId: invoiceId },
+      relations: { user: true, product: true },
+    });
     if (!order) {
       this.logger.warn(`Webhook for unknown invoice ${invoiceId}`);
       // Acknowledge so the gateway stops retrying, but never process it.
@@ -120,6 +127,9 @@ export class WebhooksService {
     order.paidAt = new Date();
     await this.orderRepository.save(order);
 
+    // ---- 5b. notify the customer (payment + formal invoice) ---------------
+    await this.notifyPayment(order, invoiceId, Number(payload.paid_amount ?? finalAmount));
+
     // ---- 6. hand over to the background worker ----------------------------
     await this.provisioningQueue.add(
       'provision-subscription',
@@ -134,5 +144,35 @@ export class WebhooksService {
 
     this.logger.log(`Payment confirmed for order ${order.orderNumber} - provisioning queued`);
     return { received: true, processed: true };
+  }
+
+  /**
+   * Payment-received notification + invoice email.
+   * Email failures are logged but never fail the webhook: the gateway must
+   * receive a 200 so it stops retrying, and provisioning continues anyway.
+   */
+  private async notifyPayment(order: Order, invoiceId: string, paidAmount: number): Promise<void> {
+    if (!order.user?.email) return;
+    try {
+      await this.mail.sendPaymentReceived({
+        email: order.user.email,
+        orderNumber: order.orderNumber,
+        amountIdr: paidAmount || Number(order.amountIdr),
+        invoiceId,
+      });
+      await this.mail.sendInvoice({
+        email: order.user.email,
+        customerName: order.user.name,
+        orderNumber: order.orderNumber,
+        productName: order.product?.name ?? 'XStore subscription',
+        durationDays: order.product?.durationDays ?? 0,
+        amountIdr: paidAmount || Number(order.amountIdr),
+        invoiceId,
+        paidAt: order.paidAt ?? new Date(),
+        siteName: (await this.settings.get<string>('site.name', 'XStore')),
+      });
+    } catch (error) {
+      this.logger.error(`Failed to send payment emails for ${order.orderNumber}: ${(error as Error).message}`);
+    }
   }
 }

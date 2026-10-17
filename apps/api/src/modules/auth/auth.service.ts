@@ -8,13 +8,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { User } from '../../database/entities/user.entity';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { RegisterDto } from './dto/auth.dto';
 import { hashPassword, verifyPassword } from './password.util';
 import { sha256 } from '../../common/utils/crypto.util';
 import { UsersService } from '../users/users.service';
+import { OtpService } from '../otp/otp.service';
 
 export interface TokenPair {
   accessToken: string;
@@ -34,6 +35,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly otp: OtpService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ user: User; tokens: TokenPair }> {
@@ -72,6 +74,37 @@ export class AuthService {
     return { user: safeUser as User, tokens };
   }
 
+  /**
+   * Passwordless login: the emailed one-time code IS the credential.
+   * The code is verified (and consumed) before any token is issued.
+   */
+  async loginWithOtp(email: string, code: string): Promise<{ user: User; tokens: TokenPair }> {
+    const normalised = email.trim().toLowerCase();
+    await this.otp.verify(normalised, code, 'LOGIN');
+
+    const user = await this.userRepository.findOneBy({ email: normalised });
+    if (!user) throw new UnauthorizedException('Invalid email or code');
+    if (user.status !== 'ACTIVE') throw new ForbiddenException('Account is suspended');
+
+    const tokens = await this.issueTokens(user);
+    const { passwordHash: _ignored, ...safeUser } = user;
+    void _ignored;
+    return { user: safeUser as User, tokens };
+  }
+
+  /** Emails a one-time code (used by the auth controller). */
+  async requestOtp(email: string, purpose: 'LOGIN' | 'EMAIL_VERIFICATION', ip?: string) {
+    return this.otp.request(email, purpose, ip);
+  }
+
+  /** Confirms ownership of an email address with a one-time code. */
+  async verifyEmailWithOtp(email: string, code: string): Promise<{ verified: true }> {
+    const normalised = email.trim().toLowerCase();
+    await this.otp.verify(normalised, code, 'EMAIL_VERIFICATION');
+    await this.otp.markEmailVerified(normalised);
+    return { verified: true };
+  }
+
   /** Rotates the refresh token: the old one is revoked, a new pair is issued. */
   async refresh(refreshToken: string): Promise<{ user: User; tokens: TokenPair }> {
     const tokenHash = sha256(refreshToken);
@@ -93,13 +126,13 @@ export class AuthService {
   async logout(refreshToken: string | undefined): Promise<void> {
     if (!refreshToken) return;
     await this.refreshTokenRepository.update(
-      { tokenHash: sha256(refreshToken), revokedAt: undefined },
+      { tokenHash: sha256(refreshToken), revokedAt: IsNull() },
       { revokedAt: new Date() },
     );
   }
 
   async logoutAll(userId: string): Promise<void> {
-    await this.refreshTokenRepository.update({ userId, revokedAt: undefined }, { revokedAt: new Date() });
+    await this.refreshTokenRepository.update({ userId, revokedAt: IsNull() }, { revokedAt: new Date() });
   }
 
   private async issueTokens(user: User): Promise<TokenPair> {

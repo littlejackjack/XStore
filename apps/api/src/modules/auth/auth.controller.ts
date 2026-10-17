@@ -7,6 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { RequestOtpDto, VerifyOtpDto } from '../otp/dto/otp.dto';
 import { User } from '../../database/entities/user.entity';
 
 export const REFRESH_COOKIE = 'xstore_refresh_token';
@@ -46,6 +47,40 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with email and password' })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: Response) {
     const { user, tokens } = await this.authService.login(dto.email, dto.password);
+    this.setRefreshCookie(response, tokens.refreshToken);
+    return { user: this.sanitise(user), accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
+  }
+
+  /**
+   * Passwordless login (step 1): email a 6-digit code.
+   * Rate limited to 3/minute - the service additionally enforces a 60s
+   * cooldown per address.
+   */
+  @Public()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('otp/request')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Request a one-time login / verification code by email' })
+  async requestOtp(@Body() dto: RequestOtpDto, @Req() request: Request) {
+    await this.authService.requestOtp(dto.email, dto.purpose ?? 'LOGIN', request.ip);
+    return { sent: true, expiresInMinutes: 10 };
+  }
+
+  /**
+   * Passwordless login (step 2): exchange the code for tokens.
+   * For EMAIL_VERIFICATION the response only confirms the address.
+   */
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('otp/verify')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Verify a one-time code (login or email verification)' })
+  async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) response: Response) {
+    if ((dto.purpose ?? 'LOGIN') === 'EMAIL_VERIFICATION') {
+      return this.authService.verifyEmailWithOtp(dto.email, dto.code);
+    }
+
+    const { user, tokens } = await this.authService.loginWithOtp(dto.email, dto.code);
     this.setRefreshCookie(response, tokens.refreshToken);
     return { user: this.sanitise(user), accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
   }

@@ -194,19 +194,26 @@ async function seed(dataSource) {
     }),
   ]);
 
+  // Real credentials can be injected through the environment for a live demo
+  // (PREVIEW_RESEND_API_KEY / PREVIEW_BAYARGG_API_KEY / PREVIEW_BAYARGG_WEBHOOK_SECRET).
+  // They are encrypted exactly like production and are NEVER written to git or .env.
+  const bayarggKey = process.env.PREVIEW_BAYARGG_API_KEY || 'pk_live_demo_api_key_1234567890';
+  const bayarggWebhook = process.env.PREVIEW_BAYARGG_WEBHOOK_SECRET || 'whsec_demo_webhook_secret_1234567890';
+  const resendKey = process.env.PREVIEW_RESEND_API_KEY || 're_demo_resend_api_key_1234567890';
+
   await apiKeyRepo.save([
     apiKeyRepo.create({
       id: randomUUID(),
       provider: 'BAYARGG',
-      keyEncrypted: encryptSecret('pk_live_demo_api_key_1234567890', MASTER_KEY),
-      webhookSecretEncrypted: encryptSecret('whsec_demo_webhook_secret_1234567890', MASTER_KEY),
+      keyEncrypted: encryptSecret(bayarggKey, MASTER_KEY),
+      webhookSecretEncrypted: encryptSecret(bayarggWebhook, MASTER_KEY),
       lastUpdatedBy: admin.id,
       lastUpdatedByEmail: admin.email,
     }),
     apiKeyRepo.create({
       id: randomUUID(),
       provider: 'RESEND',
-      keyEncrypted: encryptSecret('re_demo_resend_api_key_1234567890', MASTER_KEY),
+      keyEncrypted: encryptSecret(resendKey, MASTER_KEY),
       lastUpdatedBy: admin.id,
       lastUpdatedByEmail: admin.email,
     }),
@@ -219,6 +226,7 @@ async function seed(dataSource) {
     settingRepo.create({ key: 'site.registrationEnabled', value: true }),
     settingRepo.create({ key: 'site.supportContact', value: 'support@xstore.id' }),
     settingRepo.create({ key: 'order.autoProvision', value: true }),
+    settingRepo.create({ key: 'notifications.expiryReminderDays', value: 3 }),
   ]);
 
   // One completed order + active subscription for the demo customer.
@@ -249,6 +257,24 @@ async function seed(dataSource) {
       dataLimitBytes: 200 * 1024 ** 3,
       usedTrafficBytes: Math.floor(63.4 * 1024 ** 3),
       expireAt: new Date(Date.now() + 87 * 86400_000),
+    }),
+  );
+
+  // Second subscription: expires in 2 days so the daily reminder job has work to do.
+  await subscriptionRepo.save(
+    subscriptionRepo.create({
+      id: randomUUID(),
+      userId: customer.id,
+      orderId: order.id,
+      productId: products[0].id,
+      serverId: servers[1].id,
+      marzbanUsername: 'xstore_demo_0002',
+      subscriptionUrl: 'https://marzban-tyo.xstore.id/sub/xstoredemo0002secret',
+      status: 'ACTIVE',
+      dataLimitBytes: 50 * 1024 ** 3,
+      usedTrafficBytes: Math.floor(12.1 * 1024 ** 3),
+      expireAt: new Date(Date.now() + 2 * 86400_000),
+      expiryReminderSentAt: null,
     }),
   );
 
@@ -285,7 +311,7 @@ async function seed(dataSource) {
     }),
   ]);
 
-  console.log('[preview] seeded: 2 users, 3 products, 3 servers, 2 API keys, 1 order, 1 subscription, 3 audit entries');
+  console.log('[preview] seeded: 2 users, 3 products, 3 servers, 2 API keys, 1 order, 2 subscriptions, 3 audit entries');
 }
 
 main().catch((error) => {

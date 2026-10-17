@@ -26,6 +26,13 @@ export class User extends UuidEntity {
   @Column({ type: 'varchar', length: 20, default: 'ACTIVE', name: 'status',})
   status: UserStatus;
 
+  /** Set once the email address is confirmed with a one-time code. */
+  @Column({ type: 'boolean', default: false, name: 'email_verified',})
+  emailVerified: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'email_verified_at',})
+  emailVerifiedAt: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at',})
   createdAt: Date;
 

@@ -139,6 +139,20 @@ export const endpoints = {
       '/auth/login',
       { method: 'POST', body: { email, password }, auth: false },
     ),
+  /** Passwordless login: step 1 - email a 6-digit code. */
+  requestOtp: (email: string, purpose: 'LOGIN' | 'EMAIL_VERIFICATION' = 'LOGIN') =>
+    api<{ sent: boolean; expiresInMinutes: number }>('/auth/otp/request', {
+      method: 'POST',
+      body: { email, purpose },
+      auth: false,
+    }),
+  /** Passwordless login: step 2 - exchange the code for tokens. */
+  verifyOtp: (email: string, code: string, purpose: 'LOGIN' | 'EMAIL_VERIFICATION' = 'LOGIN') =>
+    api<{ user: User; accessToken: string }>('/auth/otp/verify', {
+      method: 'POST',
+      body: { email, code, purpose },
+      auth: false,
+    }),
   register: (email: string, password: string, name: string) =>
     api<{ user: User; accessToken: string }>(
       '/auth/register',

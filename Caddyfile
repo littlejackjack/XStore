@@ -1,0 +1,43 @@
+# =============================================================================
+# XStore reverse proxy (Caddy) - automatic HTTPS via Let's Encrypt.
+#
+# Routing:
+#   https://<DOMAIN>/api/*   ->  NestJS API   (app:4000)
+#   https://<DOMAIN>/*       ->  Next.js web  (web:3000)
+#
+# Behind Cloudflare: set the DNS record to "Proxied" and add a WAF Skip rule
+# for the Bayar.gg webhook sender IP (95.169.180.225) so payment callbacks are
+# never challenged. See docs/SETUP.md.
+# =============================================================================
+{
+	email {$ACME_EMAIL}
+	# Uncomment for local testing with self-signed certificates:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$DOMAIN} {
+	encode gzip zstd
+
+	header {
+		# HSTS is also set by the apps; keep one authoritative value here.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# ---- API (NestJS) ----
+	handle /api/* {
+		reverse_proxy app:4000 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# ---- Frontend (Next.js) ----
+	handle {
+		reverse_proxy web:3000 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}

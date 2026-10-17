@@ -17,6 +17,11 @@ process.env.ENCRYPTION_KEY = 'smoke-test-encryption-key-32-chars-minimum';
 process.env.DB_SYNC = 'false';
 process.env.SWAGGER_ENABLED = 'false';
 process.env.SEED_SUPER_ADMIN = 'false';
+// The suite performs many auth calls; rate limiting is verified separately in
+// throttling.spec.ts, so raise the limits here instead of fighting them.
+process.env.THROTTLE_TTL = '60';
+process.env.THROTTLE_LIMIT = '10000';
+process.env.AUTH_THROTTLE_LIMIT = '1000';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -268,7 +273,11 @@ describe('XStore API (e2e smoke)', () => {
 
     it('logs a customer in with an emailed one-time code (OTP)', async () => {
       const { MailService } = await import('../src/modules/mail/mail.service');
+      const { RedisService } = await import('../src/redis/redis.service');
       const otpSpy = jest.spyOn(app.get(MailService), 'sendOtpCode');
+      // The service allows one code per minute per address - clear the marker so
+      // the tests below are independent (no-op when Redis is absent).
+      await app.get(RedisService).del('otp:cooldown:LOGIN:buyer@example.com');
 
       await request(app.getHttpServer())
         .post('/api/auth/otp/request')
@@ -278,6 +287,13 @@ describe('XStore API (e2e smoke)', () => {
       const code = otpSpy.mock.calls[0][1] as string;
       expect(code).toMatch(/^\d{6}$/);
 
+      // A wrong code is rejected...
+      await request(app.getHttpServer())
+        .post('/api/auth/otp/verify')
+        .send({ email: 'buyer@example.com', code: '000000' })
+        .expect(401);
+
+      // ...the right one signs the customer in...
       const verified = await request(app.getHttpServer())
         .post('/api/auth/otp/verify')
         .send({ email: 'buyer@example.com', code })
@@ -285,7 +301,7 @@ describe('XStore API (e2e smoke)', () => {
       expect(verified.body.accessToken).toBeDefined();
       expect(verified.body.user.email).toBe('buyer@example.com');
 
-      // The code is single use.
+      // ...and the code is single use.
       await request(app.getHttpServer())
         .post('/api/auth/otp/verify')
         .send({ email: 'buyer@example.com', code })
@@ -295,18 +311,6 @@ describe('XStore API (e2e smoke)', () => {
       const stored = await dataSource.getRepository(entities.EmailOtp).find();
       expect(stored.length).toBeGreaterThan(0);
       expect(stored.some((row) => row.codeHash.includes(code))).toBe(false);
-    });
-
-    it('rejects a wrong OTP code', async () => {
-      await request(app.getHttpServer())
-        .post('/api/auth/otp/request')
-        .send({ email: 'buyer@example.com', purpose: 'LOGIN' })
-        .expect(200);
-
-      await request(app.getHttpServer())
-        .post('/api/auth/otp/verify')
-        .send({ email: 'buyer@example.com', code: '000000' })
-        .expect(401);
     });
 
     it('does not reveal whether an address exists (OTP request)', async () => {
@@ -319,7 +323,9 @@ describe('XStore API (e2e smoke)', () => {
 
     it('verifies an email address with a one-time code', async () => {
       const { MailService } = await import('../src/modules/mail/mail.service');
+      const { RedisService } = await import('../src/redis/redis.service');
       const otpSpy = jest.spyOn(app.get(MailService), 'sendOtpCode');
+      await app.get(RedisService).del('otp:cooldown:EMAIL_VERIFICATION:buyer@example.com');
 
       await request(app.getHttpServer())
         .post('/api/auth/otp/request')

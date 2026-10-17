@@ -332,8 +332,8 @@ Dokumentasi interaktif: set `SWAGGER_ENABLED=true` lalu buka `/api/docs`.
 cd apps/api
 npm install
 npm run build          # nest build
-npm test               # 79 test: crypto, webhook HMAC, Marzban, API keys, OTP,
-                        # pengingat expired, migrasi/entity parity, e2e
+npm test               # 80 test: crypto, webhook HMAC, Marzban, API keys, OTP,
+                        # rate limiting, pengingat expired, migrasi/entity parity, e2e
 
 # Frontend
 cd apps/web
@@ -357,6 +357,9 @@ Cakupan test yang terbukti lulus:
 - `subscription-expiry.spec.ts` — hanya langganan ACTIVE dalam jendela yang diingatkan,
   dedupe `expiry_reminder_sent_at`, jendela dari Admin → Settings
 - `seed-flow.spec.ts` — parity entity ↔ migrasi (termasuk `email_otps`) + alur seed
+- `throttling.spec.ts` — rate limiting benar-benar mengembalikan 429 **dan**
+  `ThrottlerGuard` terdaftar sebagai guard global (tanpa pendaftaran itu, semua
+  `@Throttle()` tidak berefek sama sekali)
 - `e2e-smoke.spec.ts` — boot penuh aplikasi: health, register/login, validasi, RBAC,
   pembuatan produk & server (password terenkripsi, tidak pernah di-echo), rotasi API key,
   audit log, daftar server publik, penolakan webhook palsu, statistik, login OTP

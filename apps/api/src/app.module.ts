@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { configuration } from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
@@ -81,7 +82,13 @@ import { RedisService } from './redis/redis.service';
   ],
   controllers: [HealthController, AuditController],
   providers: [
-    // Global guards: authentication first, then role-based access control.
+    // Global guards, executed in registration order:
+    //   1. rate limiting (cheapest, stops brute force before any DB work)
+    //   2. authentication
+    //   3. role-based access control
+    // NOTE: without this registration the @Throttle() decorators are inert -
+    // Nest only enforces throttling when the guard is part of the DI graph.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     // Global validation: strip unknown fields, transform & whitelist payloads.
